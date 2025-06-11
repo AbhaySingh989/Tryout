@@ -1,0 +1,9 @@
+google-generativeai
+python-telegram-bot
+pypdf2
+python-docx
+requests
+BeautifulSoup4
+selenium
+# spaCy and nltk can be added later if deemed necessary
+# pandas can be added later if deemed necessary
