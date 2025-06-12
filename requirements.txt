@@ -1,9 +1,10 @@
-google-generativeai
-python-telegram-bot
-pypdf2
-python-docx
-requests
 BeautifulSoup4
+google-generativeai
+PyPDF2
+python-docx
+python-telegram-bot
+reportlab
+requests
 selenium
 # spaCy and nltk can be added later if deemed necessary
 # pandas can be added later if deemed necessary

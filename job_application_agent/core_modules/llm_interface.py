@@ -2,17 +2,7 @@ import google.generativeai as genai
 from google.generativeai.types import GenerationConfig # For more specific generation settings
 from google.api_core import exceptions as google_exceptions # For specific API errors
 
-# Assuming config.py is in the job_application_agent directory
-# Adjust if config.py is located elsewhere (e.g., project root)
-try:
-    from job_application_agent import config
-except ImportError:
-    # Fallback if the above fails (e.g. if config.py is in root and PYTHONPATH is not set up for that)
-    # This makes the module a bit more resilient to different project structures during development,
-    # but ideally, the project structure and PYTHONPATH should be consistent.
-    import config # type: ignore
-
-
+from job_application_agent import config
 from job_application_agent.core_modules.error_handler import LLMInterfaceError, ConfigError, get_logger
 
 # Initialize logger for this module

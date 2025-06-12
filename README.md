@@ -140,27 +140,37 @@ The agent operates through a sequence of steps, coordinating various modules to 
     *   BotFather will give you an HTTP API token. Copy this token carefully. **Treat it like a password!**
 
 ### 7. Configure the Agent
-*   In the project's root directory (`job_application_agent`), you'll find a file named `config.py`.
-*   Open `config.py` with your text editor.
+*   In the `job_application_agent` directory, create or find the file `config.py` (i.e., `job_application_agent/config.py`).
+*   Open `job_application_agent/config.py` with your text editor.
 *   You will need to add your API keys and other configurations here. The file should have comments guiding you. For example:
     ```python
-    # config.py
+    # job_application_agent/config.py
 
-    GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"
-    TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+    # --- API Keys and Tokens ---
+    GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"  # Replace with your actual Gemini API Key
+    TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"  # Replace with your actual Telegram Bot Token
 
-    # Placeholder for job search preferences - these might be populated by user interaction later
-    # or you can set some defaults.
-    TARGET_JOB_TITLES = ["Software Engineer", "Python Developer"]
-    TARGET_LOCATIONS = ["Remote", "New York"]
-    # Add other configurations as needed, e.g., paths for webdrivers if not in PATH
+    # --- Logging Configuration ---
+    LOG_FILE_PATH = "job_application_agent/logs/app.log"  # Path to the log file
+    LOG_LEVEL = "INFO"  # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
-    # Example for Selenium WebDriver (Chrome) - ensure chromedriver.exe is in your PATH
-    # or provide the full path to the executable.
-    # CHROME_DRIVER_PATH = "C:\path\to\chromedriver.exe" # Uncomment and set if needed
+    # --- Data Storage Configuration ---
+    # Path for storing user profiles, job application history, etc.
+    # Ensure this path is writable by the application.
+    DATA_STORAGE_PATH = "job_application_agent/data/"
+
+    # --- Web Scraper Configuration ---
+    # Full path to the Selenium WebDriver executable (e.g., chromedriver.exe or geckodriver.exe)
+    # If empty, Selenium will try to find the driver in the system PATH.
+    # Example for Chrome: "C:\path\to\chromedriver.exe"
+    # Example for Firefox: "C:\path\to\geckodriver.exe"
+    SELENIUM_WEBDRIVER_PATH = "" # E.g., "/usr/local/bin/chromedriver" or "C:\WebDriver\chromedriver.exe"
+
+    # Delay in seconds between web requests for politeness (helps avoid rate limiting)
+    POLITE_REQUEST_DELAY_SECONDS = 2
     ```
 *   **Important:** Replace `"YOUR_GEMINI_API_KEY_HERE"` and `"YOUR_TELEGRAM_BOT_TOKEN_HERE"` with your actual keys.
-*   Save the `config.py` file. **Do not share this file or commit it to version control if it contains your actual keys.** The `.gitignore` file should already be configured to ignore `config.py`.
+*   Save the `job_application_agent/config.py` file. **Do not share this file or commit it to version control if it contains your actual keys.** The `.gitignore` file should already be configured to ignore `job_application_agent/config.py`.
 
 ### 8. (If using Selenium) Setup WebDriver
 *   The agent uses Selenium for web scraping dynamic websites. You'll need a WebDriver corresponding to your browser.
