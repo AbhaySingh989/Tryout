@@ -1,0 +1,24 @@
+[
+    {
+        "job_id": "openai_job1",
+        "details": {
+            "title": "AI Developer (Senior)",
+            "company": "OpenAI",
+            "url": "https://openai.com/careers/1"
+        },
+        "status": "applied_via_agent",
+        "applied_at": "2025-06-12T17:39:58.685636",
+        "last_updated_status_at": "2025-06-12T17:39:58.686085"
+    },
+    {
+        "job_id": "google_job2",
+        "details": {
+            "title": "Python Dev",
+            "company": "Google",
+            "url": "https://google.com/careers/2"
+        },
+        "status": "interview_scheduled",
+        "applied_at": "2025-06-12T17:39:58.685812",
+        "last_updated_status_at": "2025-06-12T17:39:58.686651"
+    }
+]

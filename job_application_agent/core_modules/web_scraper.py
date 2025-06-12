@@ -1,5 +1,5 @@
 import time
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -10,12 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 
-# Assuming config.py is in the job_application_agent directory
-try:
-    from job_application_agent import config
-except ImportError:
-    import config # type: ignore
-
+from job_application_agent import config
 from job_application_agent.core_modules.error_handler import WebScraperError, ConfigError, get_logger
 
 logger = get_logger(__name__)
@@ -225,6 +220,7 @@ def apply_for_job_on_site(job_url: str, user_profile: Dict[str, Any]) -> bool:
 
 # --- Example Usage (for testing) ---
 if __name__ == '__main__':
+    import logging # Import logging for standalone testing
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
     logger.info("--- Web Scraper Standalone Test ---")

@@ -13,12 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-# Assuming config.py is in the job_application_agent directory
-try:
-    from job_application_agent import config
-except ImportError:
-    import config # type: ignore
-
+from job_application_agent import config
 from job_application_agent.core_modules.error_handler import (
     get_logger,
     TelegramBotError,

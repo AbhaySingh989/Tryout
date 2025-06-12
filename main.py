@@ -2,28 +2,7 @@
 
 import asyncio # For running async functions like LLM client setup
 
-# Explicitly import config from the job_application_agent package,
-# assuming config.py resides within the job_application_agent directory.
-# This was the outcome of step 7.1.
-try:
-    from job_application_agent import config
-except ModuleNotFoundError:
-    # This might happen if main.py is run in a way that job_application_agent is not in PYTHONPATH.
-    # Or if config.py is indeed in the root. For this project, it's intended to be in job_application_agent/.
-    print("CRITICAL: Could not import 'config' from 'job_application_agent'. Ensure config.py is in the 'job_application_agent' directory and the parent directory is in PYTHONPATH if running from outside the project root.")
-    # Attempt a direct import as a last resort, which might work if config.py is in the same dir as main.py (root)
-    # AND main.py is run from the root.
-    try:
-        import config # type: ignore
-        print("INFO: Successfully imported 'config' directly. This implies config.py might be in the root directory.")
-    except ImportError:
-        print("CRITICAL: Failed both ways of importing 'config'. Application cannot reliably start.")
-        # A simple config object could be created here with defaults if absolutely necessary for basic logging,
-        # but it's better to fix the import. For now, exit or let it fail later.
-        # For the purpose of this script, we'll let it proceed and potentially fail if config attributes are needed.
-        pass
-
-
+from job_application_agent import config
 from job_application_agent.core_modules import telegram_bot
 from job_application_agent.core_modules import error_handler
 from job_application_agent.core_modules import llm_interface
@@ -35,36 +14,43 @@ async def main():
     Main function to initialize and run the AI Job Application Agent.
     """
     # 1. Setup Logging (This is the very first thing)
-    log_file_path_to_use = "job_application_agent/logs/app_default.log" # Default fallback
-    log_level_to_use = "INFO" # Default fallback
-
     try:
-        # Check if 'config' module was successfully imported and has the attributes
-        if 'config' in globals() and hasattr(config, 'LOG_FILE_PATH') and hasattr(config, 'LOG_LEVEL'):
-            log_file_path_to_use = config.LOG_FILE_PATH
-            log_level_to_use = config.LOG_LEVEL
-        else:
-            # If config not loaded, this warning goes to console via basicConfig in error_handler's except block
-            print("WARNING: 'config' module or its logging attributes (LOG_FILE_PATH, LOG_LEVEL) not found. Using default logging settings.")
-
-        error_handler.setup_logging(log_file_path=log_file_path_to_use, level=log_level_to_use)
-
-    except Exception as e: # Catch other potential errors during setup_logging
-        # Fallback to basic console logging if file logging setup fails critically
+        # Directly use config values. If config.py is missing or keys are absent,
+        # the direct attribute access will raise an AttributeError or NameError (if config not imported).
+        error_handler.setup_logging(
+            log_file_path=config.LOG_FILE_PATH,
+            level=config.LOG_LEVEL
+        )
+    except AttributeError as e:
+        # This handles if LOG_FILE_PATH or LOG_LEVEL are missing in a successfully imported config
         import logging
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.basicConfig(level=logging.CRITICAL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.critical(f"CRITICAL: Missing essential logging configuration (LOG_FILE_PATH or LOG_LEVEL) in config.py: {e}. Application cannot start properly.", exc_info=True)
+        return # Exit main if logging can't be set up
+    except NameError as e: # Raised if 'config' itself is not defined (e.g. import failed silently)
+        import logging
+        logging.basicConfig(level=logging.CRITICAL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.critical(f"CRITICAL: Configuration module 'config' not available. Application cannot start. Error: {e}", exc_info=True)
+        return # Exit main
+    except Exception as e: # Catch other potential errors during setup_logging itself
+        import logging
+        # Fallback to basic console logging if file logging setup fails critically
+        logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         logging.critical(f"CRITICAL ERROR setting up file logging: {e}. Logging to console only.", exc_info=True)
+        # Depending on desired robustness, could return here if file logging is absolutely essential.
+        # For now, allowing it to proceed with console logging if basicConfig in except worked.
 
     main_logger = error_handler.get_logger(__name__) # Get logger after setup
     main_logger.info("=================================================")
     main_logger.info("AI Job Application Agent - Application Starting")
     main_logger.info("=================================================")
-
-    # Log config loading status
-    if 'config' not in globals() or not hasattr(config, 'LOG_FILE_PATH'):
-        main_logger.warning("Logging was set up with default values because 'config' module or its attributes were not available at the time of logging setup.")
-    else:
-        main_logger.info(f"Logging configured to use file: {log_file_path_to_use}, level: {log_level_to_use}")
+    # Log the actual path and level used by setup_logging, which are from config
+    try:
+        main_logger.info(f"Logging intended to be configured using file: {config.LOG_FILE_PATH}, level: {config.LOG_LEVEL}")
+    except AttributeError:
+        main_logger.info("Logging configured (details unavailable due to prior config access issue).")
+    except NameError:
+        main_logger.info("Logging configured (details unavailable due to prior config module access issue).")
 
 
     # 2. Initialize Storage (Job Manager)

@@ -1,14 +1,9 @@
 import json
 import os
 import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 
-# Assuming config.py is in the job_application_agent directory
-try:
-    from job_application_agent import config
-except ImportError:
-    import config # type: ignore
-
+from job_application_agent import config
 from job_application_agent.core_modules.error_handler import DataStorageError, get_logger
 
 logger = get_logger(__name__)
@@ -19,8 +14,8 @@ logger = get_logger(__name__)
 _DEFAULT_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data') # Fallback if config is missing
 
 _DATA_STORAGE_BASE_PATH = getattr(config, 'DATA_STORAGE_PATH', _DEFAULT_DATA_PATH)
-if not _DATA_STORAGE_BASE_PATH.endswith('/'): # Ensure trailing slash for os.path.join
-    _DATA_STORAGE_BASE_PATH += '/'
+# Ensure _DATA_STORAGE_BASE_PATH is treated as a directory path.
+# os.path.join will correctly handle if it has a trailing slash or not.
 
 # Correctly join paths now, relative to the project root structure defined in config.
 # config.DATA_STORAGE_PATH is expected to be like "job_application_agent/data/"
@@ -55,8 +50,8 @@ def initialize_storage():
     logger.info("Job manager storage initialized.")
 
 # --- Private Helper Functions for JSON I/O ---
-def _write_json(file_path: str, data: Dict[Any, Any]) -> None:
-    """Writes dictionary data to a JSON file."""
+def _write_json(file_path: str, data: Union[Dict[Any, Any], List[Any]]) -> None:
+    """Writes dictionary or list data to a JSON file."""
     logger.debug(f"Writing JSON data to: {file_path}")
     try:
         # Ensure directory for the file exists
@@ -77,8 +72,8 @@ def _write_json(file_path: str, data: Dict[Any, Any]) -> None:
         logger.error(f"TypeError, data not JSON serializable for {file_path}: {e}", exc_info=True)
         raise DataStorageError(f"Data is not JSON serializable for {file_path}: {e}")
 
-def _read_json(file_path: str) -> Optional[Dict[Any, Any]]:
-    """Reads dictionary data from a JSON file."""
+def _read_json(file_path: str) -> Optional[Union[Dict[Any, Any], List[Any]]]:
+    """Reads dictionary or list data from a JSON file."""
     logger.debug(f"Reading JSON data from: {file_path}")
     if not os.path.exists(file_path):
         logger.warning(f"JSON file not found: {file_path}")
@@ -139,8 +134,24 @@ def log_application(user_id: str, job_id: str, job_details: Dict[str, Any], stat
 
     history_file_path = os.path.join(JOB_HISTORY_DIR, f"{user_id}_job_applications.json")
 
-    job_history = _read_json(history_file_path)
-    if job_history is None or not isinstance(job_history, list): # If file doesn't exist or is malformed
+    # Read existing history. _read_json can return Dict or List.
+    # For log_application, we expect a List of applications.
+    raw_job_history = _read_json(history_file_path)
+    job_history: List[Dict[str, Any]] = []
+
+    if isinstance(raw_job_history, list):
+        job_history = raw_job_history
+    elif isinstance(raw_job_history, dict) and "applications" in raw_job_history and isinstance(raw_job_history["applications"], list):
+        # Compatibility for old format {"applications": []}
+        logger.info(f"Reading job history for user {user_id} in old dictionary format. Will convert to list.")
+        job_history = raw_job_history["applications"]
+    elif raw_job_history is None:
+        logger.info(f"No existing job history file found for user {user_id}. Starting new list.")
+        job_history = []
+    else:
+        # This case should ideally not happen if data is written correctly.
+        # It indicates a malformed file that is neither a list nor the expected dict.
+        logger.warning(f"Job history file for user {user_id} is in an unexpected format. Type: {type(raw_job_history)}. Initializing as new list.")
         job_history = []
 
     application_entry = {
@@ -168,10 +179,8 @@ def log_application(user_id: str, job_id: str, job_details: Dict[str, Any], stat
         job_history.append(application_entry)
         logger.info(f"Logged new application for job_id {job_id} for user {user_id}.")
 
-    _write_json(history_file_path, job_history) # Note: _write_json expects a dict, here job_history is a list
-                                               # This needs adjustment in _write_json or here.
-                                               # For now, let's wrap job_history in a dict for _write_json.
-    _write_json(history_file_path, {"applications": job_history})
+    # Save the job_history list directly
+    _write_json(history_file_path, job_history)
 
 
 def update_application_status(user_id: str, job_id: str, new_status: str) -> bool:
@@ -182,13 +191,21 @@ def update_application_status(user_id: str, job_id: str, new_status: str) -> boo
     if not _initialized: initialize_storage()
 
     history_file_path = os.path.join(JOB_HISTORY_DIR, f"{user_id}_job_applications.json")
+    raw_job_history_data = _read_json(history_file_path)
+    job_history: List[Dict[str, Any]] = []
 
-    job_history_data = _read_json(history_file_path)
-    if job_history_data is None or "applications" not in job_history_data or not isinstance(job_history_data["applications"], list):
-        logger.warning(f"No job history found or format is incorrect for user {user_id} when trying to update status for job {job_id}.")
+    if isinstance(raw_job_history_data, list):
+        job_history = raw_job_history_data
+    elif isinstance(raw_job_history_data, dict) and "applications" in raw_job_history_data and isinstance(raw_job_history_data.get("applications"), list):
+        logger.info(f"Reading job history for user {user_id} (update_application_status) in old dictionary format.")
+        job_history = raw_job_history_data["applications"]
+    elif raw_job_history_data is None:
+        logger.warning(f"No job history found for user {user_id} when trying to update status for job {job_id}. Cannot update.")
+        return False
+    else:
+        logger.warning(f"Job history for user {user_id} (update_application_status) is in an unexpected format. Type: {type(raw_job_history_data)}. Cannot update.")
         return False
 
-    job_history = job_history_data["applications"]
     updated = False
     for application in job_history:
         if application.get("job_id") == job_id:
@@ -199,7 +216,7 @@ def update_application_status(user_id: str, job_id: str, new_status: str) -> boo
             break
 
     if updated:
-        _write_json(history_file_path, {"applications": job_history})
+        _write_json(history_file_path, job_history) # Save the list directly
         return True
     else:
         logger.warning(f"Job ID {job_id} not found in history for user {user_id}. Could not update status.")
@@ -213,17 +230,26 @@ def get_user_job_history(user_id: str) -> List[Dict[str, Any]]:
     if not _initialized: initialize_storage()
 
     history_file_path = os.path.join(JOB_HISTORY_DIR, f"{user_id}_job_applications.json")
-    job_history_data = _read_json(history_file_path)
+    raw_job_history_data = _read_json(history_file_path)
 
-    if job_history_data and "applications" in job_history_data and isinstance(job_history_data["applications"], list):
-        logger.info(f"Job history for user {user_id} loaded. Count: {len(job_history_data['applications'])}.")
-        return job_history_data["applications"]
+    if isinstance(raw_job_history_data, list):
+        # New format: data is directly a list of applications
+        logger.info(f"Job history for user {user_id} loaded (list format). Count: {len(raw_job_history_data)}.")
+        return raw_job_history_data
+    elif isinstance(raw_job_history_data, dict) and "applications" in raw_job_history_data and isinstance(raw_job_history_data.get("applications"), list):
+        # Old format: data is a dict with an "applications" key
+        logger.info(f"Job history for user {user_id} loaded (dict format). Count: {len(raw_job_history_data['applications'])}.")
+        return raw_job_history_data["applications"]
+    elif raw_job_history_data is None:
+        logger.info(f"No job history found for user {user_id} at {history_file_path}.")
+        return []
     else:
-        logger.info(f"No job history found for user {user_id}.")
+        logger.warning(f"Job history for user {user_id} at {history_file_path} is in an unexpected format. Type: {type(raw_job_history_data)}. Returning empty list.")
         return []
 
 # --- Example Usage (for testing) ---
 if __name__ == '__main__':
+    import logging # Import logging for standalone testing
     # Setup basic logging for testing this module standalone
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
