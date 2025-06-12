@@ -14,28 +14,44 @@ async def main():
     Main function to initialize and run the AI Job Application Agent.
     """
     # 1. Setup Logging (This is the very first thing)
-    log_file_path_to_use = "job_application_agent/logs/app_default.log" # Default fallback
-    log_level_to_use = "INFO" # Default fallback
-
-    # Directly use config attributes, assuming successful import.
-    # If config or its attributes are missing, it will raise an AttributeError,
-    # which is appropriate as these are critical for startup.
-    log_file_path_to_use = config.LOG_FILE_PATH
-    log_level_to_use = config.LOG_LEVEL
-
     try:
-        error_handler.setup_logging(log_file_path=log_file_path_to_use, level=log_level_to_use)
-    except Exception as e: # Catch other potential errors during setup_logging
-        # Fallback to basic console logging if file logging setup fails critically
+        # Directly use config values. If config.py is missing or keys are absent,
+        # the direct attribute access will raise an AttributeError or NameError (if config not imported).
+        error_handler.setup_logging(
+            log_file_path=config.LOG_FILE_PATH,
+            level=config.LOG_LEVEL
+        )
+    except AttributeError as e:
+        # This handles if LOG_FILE_PATH or LOG_LEVEL are missing in a successfully imported config
         import logging
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.basicConfig(level=logging.CRITICAL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.critical(f"CRITICAL: Missing essential logging configuration (LOG_FILE_PATH or LOG_LEVEL) in config.py: {e}. Application cannot start properly.", exc_info=True)
+        return # Exit main if logging can't be set up
+    except NameError as e: # Raised if 'config' itself is not defined (e.g. import failed silently)
+        import logging
+        logging.basicConfig(level=logging.CRITICAL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.critical(f"CRITICAL: Configuration module 'config' not available. Application cannot start. Error: {e}", exc_info=True)
+        return # Exit main
+    except Exception as e: # Catch other potential errors during setup_logging itself
+        import logging
+        # Fallback to basic console logging if file logging setup fails critically
+        logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         logging.critical(f"CRITICAL ERROR setting up file logging: {e}. Logging to console only.", exc_info=True)
+        # Depending on desired robustness, could return here if file logging is absolutely essential.
+        # For now, allowing it to proceed with console logging if basicConfig in except worked.
 
     main_logger = error_handler.get_logger(__name__) # Get logger after setup
     main_logger.info("=================================================")
     main_logger.info("AI Job Application Agent - Application Starting")
     main_logger.info("=================================================")
-    main_logger.info(f"Logging configured to use file: {log_file_path_to_use}, level: {log_level_to_use}")
+    # Log the actual path and level used by setup_logging, which are from config
+    try:
+        main_logger.info(f"Logging intended to be configured using file: {config.LOG_FILE_PATH}, level: {config.LOG_LEVEL}")
+    except AttributeError:
+        main_logger.info("Logging configured (details unavailable due to prior config access issue).")
+    except NameError:
+        main_logger.info("Logging configured (details unavailable due to prior config module access issue).")
+
 
     # 2. Initialize Storage (Job Manager)
     try:
