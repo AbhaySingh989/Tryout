@@ -68,7 +68,7 @@ async def main():
     # 3. Configure LLM Client (Gemini)
     try:
         main_logger.info("Configuring LLM client (Gemini)...")
-        await llm_interface.configure_genai_client() # This is an async function
+        llm_interface.configure_genai_client() # This is an async function
         main_logger.info("LLM client configured successfully.")
     except error_handler.ConfigError as e:
         main_logger.critical(f"LLM configuration error: {e}. Bot may not function correctly with LLM features.", exc_info=True)
