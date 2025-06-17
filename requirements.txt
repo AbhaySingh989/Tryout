@@ -6,5 +6,6 @@ python-telegram-bot
 reportlab
 requests
 selenium
+crawl4ai
 # spaCy and nltk can be added later if deemed necessary
 # pandas can be added later if deemed necessary
