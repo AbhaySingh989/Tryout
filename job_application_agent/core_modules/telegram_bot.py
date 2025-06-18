@@ -1,6 +1,7 @@
 import io
 import os
 import json # For storing user data if needed, and for LLM interactions
+from typing import Optional # Added Optional
 
 from telegram import Update, File as TelegramFile # Renamed to avoid conflict
 from telegram.ext import (
