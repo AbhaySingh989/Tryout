@@ -230,20 +230,23 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data.pop(key, None)
     return ConversationHandler.END
 
-# --- Main Bot Function ---
-def run_bot():
-    """Runs the Telegram bot."""
-    logger.info("Attempting to run the Telegram bot...")
+# --- Bot Setup and Control Functions ---
+def setup_bot() -> Optional[Application]:
+    """
+    Builds and configures the Telegram Application instance with handlers.
+    Does not start polling.
+
+    Returns:
+        Application: The configured PTB Application instance, or None if setup fails.
+    """
+    logger.info("Setting up Telegram bot application...")
     try:
         bot_token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
         if not bot_token or bot_token == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-            logger.critical("TELEGRAM_BOT_TOKEN not found or not set in config.py. Bot cannot start.")
+            logger.critical("TELEGRAM_BOT_TOKEN not found or not set in config.py. Bot cannot be configured.")
+            # Raise ConfigError so main.py can catch it if called from there
+            # Or handle it here if run_bot is called standalone and exit.
             raise ConfigError("TELEGRAM_BOT_TOKEN is missing or not set in the configuration.")
-
-        # It's good practice to call LLM client config once at startup
-        # However, ensure_llm_client_configured() is async, so it can't be directly called here (sync context)
-        # This means it will be called on first use in an async handler.
-        # Alternatively, run_bot could be made async and use asyncio.run()
 
         application = ApplicationBuilder().token(bot_token).build()
 
@@ -253,47 +256,145 @@ def run_bot():
             states={
                 ASK_CV: [MessageHandler(filters.ATTACHMENT | filters.Document.ALL, handle_cv_upload)],
                 ASK_QUESTIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_question_answer)],
-                # No explicit HANDLE_ANSWERS state if processing happens directly after last question.
             },
             fallbacks=[CommandHandler("cancel", cancel_command), CommandHandler("help", help_command)],
-            # per_user=True, per_chat=True # Default, good for user-specific data
         )
 
         application.add_handler(conv_handler)
-        application.add_handler(CommandHandler("help", help_command)) # Also make help available outside conversation
+        application.add_handler(CommandHandler("help", help_command))
 
-        logger.info("Telegram bot handlers configured. Starting polling...")
-        application.run_polling()
-        logger.info("Telegram bot has stopped polling.")
+        logger.info("Telegram bot application configured with handlers.")
+        return application
 
-    except ConfigError as e:
-        logger.critical(f"Bot startup failed due to configuration error: {e}")
-        # No way to inform user via bot if token is missing, so just log.
+    except ConfigError:
+        # Re-raise ConfigError to be caught by the caller (e.g., main.py or standalone test)
+        raise
     except Exception as e:
-        logger.critical(f"An unexpected error occurred while trying to run the bot: {e}", exc_info=True)
+        logger.critical(f"An unexpected error occurred during bot setup: {e}", exc_info=True)
+        # Wrap other exceptions in a generic TelegramBotError or re-raise if specific handling is needed
+        raise TelegramBotError(f"Bot setup failed due to an unexpected error: {e}") from e
+
+async def start_bot_async(application: Application) -> None:
+    """
+    Initializes, starts the application, and begins polling.
+    Args:
+        application (Application): The configured PTB Application instance.
+    """
+    if not application:
+        logger.error("Application object is None, cannot start bot.")
+        return
+
+    logger.info("Starting bot polling (asynchronously)...")
+    try:
+        await application.initialize()
+        await application.start()
+        # updater.start_polling is a blocking call that runs in its own thread.
+        # It's not an awaitable, so we don't await it directly in the typical async/await sense.
+        # The Application's start() method typically handles the updater lifecycle.
+        # If we need to start polling explicitly on the updater (e.g. for drop_pending_updates):
+        if application.updater:
+            application.updater.start_polling(drop_pending_updates=True)
+            logger.info("Bot updater started polling for new updates.")
+        else:
+            logger.warning("Application updater not found. Polling might not have started as expected.")
+
+        # Keep this function alive if it's the main task for polling,
+        # or ensure main.py keeps the event loop running.
+        # For now, assuming polling runs in background threads managed by PTB.
+        logger.info("Bot has started and is now polling.")
+
+    except Exception as e:
+        logger.critical(f"An error occurred while starting bot polling: {e}", exc_info=True)
+        # Potentially try to shut down if partially started
+        await shutdown_bot_async(application) # Attempt graceful shutdown
+        raise TelegramBotError(f"Failed to start bot polling: {e}") from e
+
+
+async def shutdown_bot_async(application: Application) -> None:
+    """
+    Gracefully shuts down the Telegram bot application.
+    Args:
+        application (Application): The PTB Application instance.
+    """
+    if not application:
+        logger.warning("Application object is None, cannot shutdown.")
+        return
+
+    logger.info("Attempting to shut down the Telegram bot...")
+    try:
+        if application.updater and application.updater.running:
+            logger.info("Stopping updater polling...")
+            application.updater.stop() # This is synchronous
+            logger.info("Updater polling stopped.")
+
+        if application.running: # PTB v20 check
+            logger.info("Stopping application...")
+            await application.stop()
+            logger.info("Application stopped.")
+
+        logger.info("Shutting down application...")
+        await application.shutdown()
+        logger.info("Telegram bot application shut down successfully.")
+
+    except Exception as e:
+        logger.error(f"An error occurred during bot shutdown: {e}", exc_info=True)
+        # Even if errors occur, it's usually best to let it try to complete.
+
+
+# Old run_bot function is removed.
 
 if __name__ == '__main__':
-    # This is for direct execution of telegram_bot.py, useful for development/testing the bot.
-    # Ensure your config.py is correctly set up with API keys.
+    import logging
+    import asyncio
 
-    # Basic logging setup if running standalone (error_handler.setup_logging would be better)
-    # but error_handler's setup_logging needs config values itself.
-    # For simplicity here, just basic Python logging.
-    # In a real run, main.py would call error_handler.setup_logging() first.
+    # Basic logging setup for standalone testing
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
         handlers=[logging.StreamHandler()]
     )
-    logger.info("Running telegram_bot.py directly for testing...")
-    # Attempt to configure LLM client here for testing if running standalone
-    # This needs an event loop to run configure_llm_client which is async
-    import asyncio
-    try:
-        asyncio.run(ensure_llm_client_configured())
-        logger.info("LLM client configured for standalone test run.")
-    except Exception as e:
-        logger.error(f"Failed to configure LLM client for standalone test: {e}")
-        logger.warning("LLM features might not work if client isn't configured.")
+    logger.info("Running telegram_bot.py directly for testing (async)...")
 
-    run_bot()
+    async def main_test():
+        application = None # Ensure application is defined for finally block
+        try:
+            # 1. Configure LLM (needed by handlers)
+            logger.info("Configuring LLM client for standalone test...")
+            await ensure_llm_client_configured()
+            logger.info("LLM client configured.")
+
+            # 2. Setup Bot
+            logger.info("Setting up bot for standalone test...")
+            application = setup_bot() # This can raise ConfigError
+
+            if application:
+                # 3. Start Bot
+                logger.info("Starting bot asynchronously for standalone test...")
+                await start_bot_async(application)
+
+                logger.info("Bot should be running. Press Ctrl+C to stop.")
+                # Keep the test running until interrupted
+                while True:
+                    await asyncio.sleep(5) # Check for interrupt every 5s
+            else:
+                logger.error("Failed to setup bot for standalone test. Application is None.")
+
+        except ConfigError as e:
+            logger.critical(f"Configuration error in standalone test: {e}. Bot cannot run.")
+        except KeyboardInterrupt:
+            logger.info("Standalone test interrupted by user (Ctrl+C).")
+        except Exception as e:
+            logger.error(f"Error in standalone test's main_test function: {e}", exc_info=True)
+        finally:
+            if application:
+                logger.info("Shutting down bot in standalone test...")
+                await shutdown_bot_async(application)
+            logger.info("Standalone test finished.")
+
+    try:
+        asyncio.run(main_test())
+    except RuntimeError as e: # Handle cases like trying to run asyncio.run() when a loop is already running
+        if "cannot call run when a loop is already running" in str(e):
+            logger.warning(f"Asyncio loop already running. This can happen in some environments (e.g. Jupyter). {e}")
+        else:
+            raise
