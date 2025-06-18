@@ -3,7 +3,12 @@
 import asyncio # For running async functions like LLM client setup
 
 from job_application_agent import config
-from job_application_agent.core_modules import telegram_bot
+# Updated telegram_bot imports
+from job_application_agent.core_modules.telegram_bot import (
+    setup_bot,
+    start_bot_async,
+    shutdown_bot_async
+)
 from job_application_agent.core_modules import error_handler
 from job_application_agent.core_modules import llm_interface
 from job_application_agent.core_modules import job_manager
@@ -68,7 +73,7 @@ async def main():
     # 3. Configure LLM Client (Gemini)
     try:
         main_logger.info("Configuring LLM client (Gemini)...")
-        await llm_interface.configure_genai_client() # This is an async function
+        llm_interface.configure_genai_client() # This is an async function
         main_logger.info("LLM client configured successfully.")
     except error_handler.ConfigError as e:
         main_logger.critical(f"LLM configuration error: {e}. Bot may not function correctly with LLM features.", exc_info=True)
@@ -77,33 +82,62 @@ async def main():
     except Exception as e:
         main_logger.critical(f"Unexpected error configuring LLM client: {e}. Bot may not function correctly.", exc_info=True)
 
-    # 4. Start the Telegram Bot
-    main_logger.info("Starting Telegram bot...")
+    # 4. Setup and Start the Telegram Bot
+    application = None # Ensure application is defined for the finally block
     try:
-        telegram_bot.run_bot() # This will block until the bot is stopped
-    except error_handler.ConfigError as e: # e.g. if Telegram token is missing
-        main_logger.critical(f"Telegram bot failed to start due to configuration error: {e}", exc_info=True)
-    except Exception as e:
-        main_logger.critical(f"Telegram bot crashed with an unexpected error: {e}", exc_info=True)
+        main_logger.info("Setting up Telegram bot...")
+        # setup_bot() can raise ConfigError if token is missing or other setup issues.
+        application = setup_bot()
+        # If setup_bot raises an error, it will be caught by the ConfigError or generic Exception handlers below.
+
+        main_logger.info("Starting Telegram bot polling...")
+        await start_bot_async(application) # Start polling
+        main_logger.info("Telegram bot polling started. Bot is running.")
+
+        # Keep the main task alive indefinitely until a shutdown signal (e.g., KeyboardInterrupt)
+        # This allows the bot's background threads (for polling) to continue running.
+        while True:
+            await asyncio.sleep(3600) # Sleep for a long time (e.g., 1 hour)
+            # This loop will be broken by KeyboardInterrupt or if the bot stops for other critical reasons.
+
+    except error_handler.ConfigError as e: # Catches ConfigError from setup_bot or other config issues
+        main_logger.critical(f"Telegram bot setup or startup failed due to configuration error: {e}", exc_info=True)
+    except error_handler.TelegramBotError as e: # Catches specific bot errors from start_bot_async
+        main_logger.critical(f"Telegram bot failed during startup or runtime: {e}", exc_info=True)
+    except Exception as e: # Catch any other unexpected errors during bot setup/startup
+        main_logger.critical(f"Telegram bot crashed with an unexpected error during setup/startup: {e}", exc_info=True)
     finally:
+        main_logger.info("Attempting to shut down Telegram bot gracefully...")
+        if application: # Check if application was successfully initialized
+            await shutdown_bot_async(application)
+            main_logger.info("Telegram bot shut down.")
+        else:
+            main_logger.info("Telegram bot application was not initialized; no specific bot shutdown needed.")
+
         main_logger.info("===================================================")
         main_logger.info("AI Job Application Agent - Application Shutting Down")
         main_logger.info("===================================================")
 
 # --- Entry Point Guard ---
 if __name__ == "__main__":
+    # The main() function is now fully async and handles its own lifecycle.
+    # KeyboardInterrupt is caught inside asyncio.run() or by the finally block in main().
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        # This outer KeyboardInterrupt catch is primarily for the case where asyncio.run(main())
+        # itself is interrupted before main's own try/except/finally can fully handle it,
+        # or if an interrupt occurs during the final logging in main's finally block.
+        # Most graceful shutdown logic (including bot shutdown) should be within main()'s finally.
         try:
-            # Attempt to get a logger, though logging might not be set up if KI happens very early
-            shutdown_logger = error_handler.get_logger(__name__) # Use existing error_handler
-            shutdown_logger.info("Application shut down by KeyboardInterrupt (Ctrl+C).")
-        except Exception: # If get_logger itself fails or logging isn't setup
-            print("Application shut down by KeyboardInterrupt (Ctrl+C). Logging not available or failed.")
-    except Exception as e:
+            # Try to get a logger; it might fail if logging wasn't set up or was torn down.
+            shutdown_logger = error_handler.get_logger(__name__)
+            shutdown_logger.info("Application shut down by KeyboardInterrupt (Ctrl+C) at entry point.")
+        except Exception:
+            print("Application shut down by KeyboardInterrupt (Ctrl+C) at entry point. Logging not available.")
+    except Exception as e: # Catch any other completely unhandled exceptions from asyncio.run(main())
         try:
             critical_logger = error_handler.get_logger(__name__)
-            critical_logger.critical(f"Application exited due to an unhandled error in main execution: {e}", exc_info=True)
+            critical_logger.critical(f"Application exited due to a critical unhandled error at entry point: {e}", exc_info=True)
         except Exception:
-            print(f"Application exited due to an unhandled error in main execution: {e}. Logging not available or failed.")
+            print(f"Application exited due to a critical unhandled error at entry point: {e}. Logging not available.")
