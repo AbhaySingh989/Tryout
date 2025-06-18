@@ -3,7 +3,10 @@ import os
 import json # For storing user data if needed, and for LLM interactions
 
 from typing import Optional # Added Optional
+<<<<<<< HEAD
 
+=======
+>>>>>>> 41be2d46fdc3380ee686036e6e2152a4f5cd3690
 import Optional
 
 
